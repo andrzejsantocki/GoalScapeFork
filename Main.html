@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Goal Management System</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <link href="styles.css" rel="stylesheet" />
+  </head>
+  <body class="antialiased font-sans bg-gray-100">
+    <div class="container mx-auto px-4 py-5">
+      <div class="my-5">
+        <svg
+          id="goalCanvas"
+          xmlns="http://www.w3.org/2000/svg"
+          xmlns:xlink="http://www.w3.org/1999/xlink"
+        >
+          <rect width="100%" height="100%"" style="fill:none;
+          stroke-width:3;stroke:red"/>
+        </svg>
+      </div>
+      <div class="flex flex-col items-center">
+        <input
+          type="text"
+          id="goalName"
+          placeholder="Goal Name"
+          class="shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline w-full mb-4"
+        />
+        <input
+          type="range"
+          id="goalImportance"
+          min="0"
+          max="100"
+          class="w-full"
+        />
+      </div>
+      <div class="flex justify-around mt-4">
+        <button id="addGoalBtn" class="button bg-blue-500 hover:bg-blue-700">
+          Add Goal
+        </button>
+        <button
+          id="addSubgoalBtn"
+          class="button bg-green-500 hover:bg-green-700"
+        >
+          Add Subgoal
+        </button>
+        <button id="deleteBtn" class="button bg-red-500 hover:bg-red-700">
+          Delete
+        </button>
+        <button id="updateBtn" class="button bg-yellow-500 hover:bg-yellow-700">
+          Update
+        </button>
+      </div>
+    </div>
+
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script>
+      alert(
+        "window.innerWidth: " +
+          window.innerWidth +
+          "\nwindow.innerHeight: " +
+          window.innerHeight
+      );
+
+      const margin = { top: 20, right: 20, bottom: 20, left: 20 };
+      // Declare and initialize width and height variables based on the window size and margin
+      const width = window.innerWidth - margin.left - margin.right;
+      const height = window.innerHeight - margin.top - margin.bottom;
+
+      const svg = d3
+        .select("#goalCanvas")
+        .append("svg")
+        .attr("width", "100%") //Declares svg frames as % of viewport
+        .attr("height", "100%") //Declares svg frames as % of viewport
+        // Adjust the viewBox x, y ,
+        .attr("viewBox", "0 -650 2000 2000")
+        .append("g")
+        // Adjust the transform to center the content in the new, taller viewport, by x, y
+        .attr("transform", "translate(0,0)");
+
+      const radius = Math.min(width, height) / 3;
+      const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+      let data = [];
+      let selectedMainGoal = null;
+
+      const partition = (data) => {
+        const root = d3
+          .hierarchy({ children: data })
+          .sum((d) => d.importance)
+          .sort((a, b) => b.value - a.value);
+        return d3.partition().size([2 * Math.PI, root.height + 1])(root);
+      };
+
+      const arc = d3
+        .arc()
+        .startAngle((d) => d.x0)
+        .endAngle((d) => d.x1)
+        .padAngle(0.01)
+        .padRadius(radius / 3)
+        .innerRadius((d) => d.y0 * radius)
+        .outerRadius((d) => Math.max(d.y0 * radius, d.y1 * radius - 1));
+
+      function getRandomColor() {
+        const letters = "0123456789ABCDEF";
+        let color = "#";
+        for (let i = 0; i < 6; i++) {
+          color += letters[Math.floor(Math.random() * 16)];
+        }
+        console.log(color);
+        return color;
+      }
+
+      function update() {
+        svg.selectAll("*").remove();
+        const root = partition(data);
+
+        const group = svg
+          .append("g")
+          .attr("transform", `translate(${width / 2},${height / 2})`);
+
+        const path = group
+          .selectAll("path")
+          .data(root.descendants().filter((d) => d.depth))
+          .enter()
+          .append("path")
+          .attr("class", "ring")
+          .attr("fill", (d) => d.data.color) // Use the color assigned to each node
+
+          .attr("d", arc)
+          .on("click", function (event, d) {
+            if (d.depth === 1) {
+              selectMainGoal(d);
+            }
+          });
+
+        // const textArcs = group
+        //   .selectAll(".textArc")
+        //   .data(root.descendants().filter((d) => d.depth))
+        //   .enter()
+        //   .append("path")
+        //   .attr("class", "textArc")
+        //   .attr("id", (d, i) => `textArc_${i}`)
+        //   .attr("d", arc)
+        //   .style("fill", "none")
+        //   .style("stroke", "none");
+
+        // Append text to the arcs
+        group
+          .selectAll(".segment-text")
+          .data(root.descendants().filter((d) => d.depth))
+          .enter()
+          .append("text")
+          .attr("class", "segment-text")
+          .append("textPath")
+          .attr("xlink:href", (d, i) => `#textArc_${i}`)
+          .style("text-anchor", "middle")
+          .attr("startOffset", "50%")
+          .text(
+            (d) => `${d.data.id}: ${((d.value / root.value) * 100).toFixed(1)}%`
+          );
+      }
+
+      function computeTextRotation(d) {
+        const angle = ((d.x0 + d.x1) / Math.PI) * 90;
+        return angle < 90 || angle > 270 ? angle : angle + 180;
+      }
+
+      document
+        .getElementById("addGoalBtn")
+        .addEventListener("click", function () {
+          const name = document.getElementById("goalName").value;
+          const importance = parseInt(
+            document.getElementById("goalImportance").value
+          );
+          data.push({
+            id: name,
+            importance: importance,
+            children: [],
+            color: getRandomColor(),
+          });
+          update();
+        });
+
+      document
+        .getElementById("addSubgoalBtn")
+        .addEventListener("click", function () {
+          const name = document.getElementById("goalName").value;
+          let points = parseInt(
+            document.getElementById("goalImportance").value
+          );
+
+          //Goal dispresion made here for subgoal
+
+          if (selectedMainGoal) {
+            let newSubgoal;
+            // Calculate the total current points of the children
+            let totalCurrentPoints = selectedMainGoal.data.children.reduce(
+              (acc, child) => acc + child.importance,
+              0
+            );
+
+            alert(`Initial total current points is: ${totalCurrentPoints}`);
+
+            // If no points have been allocated yet, set the new subgoal's importance to 100
+            if (totalCurrentPoints === 0) {
+              newSubgoal = {
+                id: name,
+                importance: 100,
+                color: getRandomColor(),
+              };
+            } else {
+              // Calculate the scaling factor for existing goals
+              const scalingFactor = (100 - points) / totalCurrentPoints;
+
+              // Scale down each existing goal's importance proportionally
+              selectedMainGoal.data.children.forEach((child) => {
+                child.importance *= scalingFactor;
+              });
+
+              // Create the new subgoal with the specified importance
+              newSubgoal = {
+                id: name,
+                importance: points,
+                color: getRandomColor(),
+              };
+            }
+
+            // Add the new subgoal if it was created
+            if (newSubgoal) {
+              selectedMainGoal.data.children.push(newSubgoal);
+              update(); // Call the update function to refresh the visualization
+
+              // Recalculate the total current points after adding the new subgoal
+              totalCurrentPoints = selectedMainGoal.data.children.reduce(
+                (acc, child) => acc + child.importance,
+                0
+              );
+
+              alert(`New subgoal importance: ${newSubgoal.importance}`);
+              alert(`Updated total current points: ${totalCurrentPoints}`);
+
+              // Create a string that contains all the importance values of the children
+              const importanceValues = selectedMainGoal.data.children
+                .map((child) => `${child.importance}: name id: ${child.id}`)
+                .join(", ");
+
+              // Display the alert with the importance values
+              alert(`Importance values of children: ${importanceValues}`);
+            } else {
+              alert("No more points can be allocated to this main goal.");
+            }
+          } else {
+            alert("Please select a main goal to add a subgoal.");
+          }
+        });
+
+      document
+        .getElementById("goalImportance")
+        .addEventListener("input", function (e) {
+          const sliderValueDisplay =
+            document.getElementById("sliderValueDisplay");
+          if (!sliderValueDisplay) {
+            // Create a new span element to show the slider value if it doesn't exist
+            const newSpan = document.createElement("span");
+            newSpan.id = "sliderValueDisplay";
+            this.parentNode.insertBefore(newSpan, this.nextSibling);
+          }
+          // Update the text of the span element with the current value of the slider
+          document.getElementById(
+            "sliderValueDisplay"
+          ).textContent = ` ${this.value}%`;
+        });
+
+      window.onload = function () {
+        const svg = d3.select("#goalCanvas");
+        const width = window.innerWidth; // Use the window's width
+        const height = window.innerHeight; // Use the window's height
+        const radius = Math.min(width, height) / 3;
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+        const slider = document.getElementById("goalImportance");
+        slider.value = 100; // Set the default value to 100%
+        updateSliderValueDisplay(slider.value);
+        const output = document.createElement("span");
+
+        output.id = "sliderValueDisplay";
+        output.innerHTML = ` ${slider.value}%`; // Set the default slider value display
+        slider.parentNode.insertBefore(output, slider.nextSibling);
+
+        slider.oninput = function () {
+          output.innerHTML = ` ${this.value}%`;
+        };
+      };
+
+      // Ensure the updateSliderValueDisplay function is defined before it's used
+      function updateSliderValueDisplay(value) {
+        const output = document.getElementById("sliderValueDisplay");
+        if (!output) {
+          const newSpan = document.createElement("span");
+          newSpan.id = "sliderValueDisplay";
+
+          document
+            .getElementById("goalImportance")
+            .parentNode.appendChild(newSpan);
+        }
+        document.getElementById(
+          "sliderValueDisplay"
+        ).textContent = ` ${value}%`;
+      }
+
+      window.onload = function () {
+        // Set the default value for the slider and update the display
+        const slider = document.getElementById("goalImportance");
+        slider.value = 50; // It's better to start with a middle value
+        updateSliderValueDisplay(slider.value);
+      };
+
+      function selectMainGoal(goal) {
+        selectedMainGoal = goal;
+        const slider = document.getElementById("goalImportance");
+        slider.value = 99; // Reset the slider to 100% when a new main goal is selected
+        updateSliderValueDisplay(slider.value);
+      }
+
+      // Update the slider value display when the slider value changes
+      document
+        .getElementById("goalImportance")
+        .addEventListener("input", function (e) {
+          updateSliderValueDisplay(e.target.value);
+        });
+
+      document
+        .getElementById("importBtn")
+        .addEventListener("click", function () {
+          // Retrieve the saved goals from localStorage
+          const savedGoals = localStorage.getItem("goals");
+          if (savedGoals) {
+            data = JSON.parse(savedGoals);
+            update();
+          } else {
+            alert("No saved goals to import.");
+          }
+        });
+
+      document
+        .getElementById("exportBtn")
+        .addEventListener("click", function () {
+          // Save the current goals to localStorage
+          localStorage.setItem("goals", JSON.stringify(data));
+          alert("Goals exported successfully.");
+        });
+
+      document
+        .getElementById("changeBgBtn")
+        .addEventListener("click", function () {
+          // Change the background color of the body
+          document.body.style.backgroundColor = getRandomColor();
+        });
+    </script>
+  </body>
+</html>
